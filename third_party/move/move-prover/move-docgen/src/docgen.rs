@@ -1984,7 +1984,12 @@ impl<'env> Docgen<'env> {
                     {
                         format!("<b>{}</b>", &code[at + m.start()..at + m.end()])
                     } else if let Some(label) = self.resolve_to_label(s, is_call) {
-                        format!("<a href=\"{}\">{}</a>", label, s)
+                        "".to_owned()
+                        // if !label.is_empty() {
+                        //     format!("<a href=\"{}\">{}</a>", label, s)
+                        // } else {
+                        //  
+                        // }
                     } else {
                         "".to_owned()
                     }

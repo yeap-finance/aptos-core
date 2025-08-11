@@ -1813,6 +1813,9 @@ pub struct TransactionOptions {
     /// When "seqnum" is chosen, the transaction will contain a sequence number that matches with the sender's onchain sequence number.
     #[clap(long, default_value_t = ReplayProtectionType::Seqnum)]
     pub(crate) replay_protection_type: ReplayProtectionType,
+
+    #[clap(long)]
+    pub(crate) force: bool,
 }
 
 impl TransactionOptions {
@@ -1991,7 +1994,7 @@ impl TransactionOptions {
             let simulated_txn = txns.first().unwrap();
 
             // Check if the transaction will pass, if it doesn't then fail
-            if !simulated_txn.info.success {
+            if !simulated_txn.info.success && !self.force {
                 return Err(CliError::SimulationError(
                     simulated_txn.info.vm_status.clone(),
                 ));
