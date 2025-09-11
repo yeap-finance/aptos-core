@@ -110,7 +110,7 @@ impl AptosUnitTestFactory {
             .get(&module_test_plan.module_id)
             .and_then(|m| m.infos.get(&test.test_name))
             .cloned();
-
+        let is_fork_test = test_fork_info.is_some();
         // remote client need to spawn an async task to run the setup
         let store = self
             .rt_handle
@@ -127,11 +127,14 @@ impl AptosUnitTestFactory {
             let contain_native_func = m.function_defs().iter().any(|f| f.is_native());
             let contain_native_struct = m.struct_defs().iter().any(|s| matches!(s.field_information, StructFieldInformation::Native));
             let is_core_module = m.self_id().address() == &CORE_CODE_ADDRESS;
-
-            // skip override modules that have native functions or structs
-            if !is_core_module && (contain_native_func || contain_native_struct) {
-                continue;
+            // if fork test, skip override modules that have native functions or structs
+            if is_fork_test {
+                // skip override modules that have native functions or structs
+                if !is_core_module && (contain_native_func || contain_native_struct) {
+                    continue;
+                }
             }
+
             inject_runtime_metadata(&mut m, &self.module_metadatas, None);
             store
                 .inner
