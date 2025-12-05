@@ -307,7 +307,7 @@ impl SharedTestingConfig {
                         args,
                         &mut MoveVmDataCacheAdapter::new(
                             &mut data_cache,
-                            &self.starting_storage_state,
+                            &resource_resolver,
                             &loader,
                         ),
                         &mut gas_meter,
