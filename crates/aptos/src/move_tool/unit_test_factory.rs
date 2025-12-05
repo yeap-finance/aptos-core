@@ -59,11 +59,13 @@ use move_vm_runtime::ModuleStorage;
 use move_vm_runtime::{
     native_extensions::NativeContextExtensions, AsFunctionValueExtension,
 };
-use move_vm_types::{gas::UnmeteredGasMeter, resolver::ResourceResolver};
+use move_vm_test_utils::gas_schedule::{zero_cost_schedule, CostTable, GasCost, GasStatus};
+use move_vm_types::resolver::ResourceResolver;
 use serde::Serialize;
 use std::{collections::BTreeMap, fmt, path::PathBuf, str::FromStr, sync::Arc};
 use tokio::runtime::Handle;
 use url::Url;
+
 type FakeExecutorStateStore = DeltaStateStore<EitherStateView<EmptyStateView, CachedRemoteStateView<DebuggerStateView>>>;
 const APTOS_REST_API_KEY: &str = "APTOS_REST_API_KEY";
 
@@ -146,12 +148,24 @@ impl AptosUnitTestFactory {
     }
 }
 
+
+fn unit_cost_table() -> CostTable {
+    let mut cost_schedule = zero_cost_schedule();
+    cost_schedule.instruction_table.iter_mut().for_each(|cost| {
+        *cost = GasCost::new(1, 1);
+    });
+    cost_schedule
+}
+
+/// The default value bounding the amount of gas consumed in a test.
+const DEFAULT_EXECUTION_BOUND: u64 = 1_000_000;
+
 impl UnitTestFactory for AptosUnitTestFactory {
-    type GasMeter = UnmeteredGasMeter;
+    type GasMeter = GasStatus;
     type Resolver = StateStore;
 
     fn new_gas_meter(&self) -> Self::GasMeter {
-        UnmeteredGasMeter
+        GasStatus::new(unit_cost_table(), DEFAULT_EXECUTION_BOUND.into())
     }
 
     fn finalize_test_run_info(
@@ -607,6 +621,17 @@ pub(crate) mod fork_attributes {
                                 );
                             }
                         },
+                        AttributeValue::Name(id, module_opt, name_sym) => {
+                            if let Some(network) = resolve_string_constant(
+                                env,
+                                current_module,
+                                id,
+                                module_opt,
+                                name_sym,
+                            ) {
+                                fork_info.network = Some(network);
+                            }
+                        },
                         _ => {
                             let aloc = env.get_node_loc(*id);
                             let assign_loc = env.get_node_loc(*id);
@@ -647,6 +672,66 @@ pub(crate) mod fork_attributes {
                         )]);
                     },
                 }
+            },
+        }
+    }
+
+    fn resolve_string_constant(
+        env: &GlobalEnv,
+        current_module: &ModuleName,
+        attr_id: &move_model::model::NodeId,
+        module_opt: &Option<ModuleName>,
+        name_sym: &move_model::symbol::Symbol,
+    ) -> Option<String> {
+        use move_model::ast::Value;
+
+        let vloc = env.get_node_loc(*attr_id);
+        let module_env = match module_opt {
+            Some(module_name) => env.find_module(module_name).or_else(|| {
+                env.error(
+                    &vloc,
+                    &format!("Unbound module `{}` in constant", module_name.display_full(env)),
+                );
+                None
+            })?,
+            None => env
+                .find_module(current_module)
+                .expect("current module exists"),
+        };
+
+        let module_name = module_opt.as_ref().unwrap_or(current_module);
+        let named_constant = match module_env.find_named_constant(*name_sym) {
+            Some(const_env) => const_env,
+            None => {
+                env.error(
+                    &vloc,
+                    &format!(
+                        "Unbound constant `{}` in module `{}`",
+                        name_sym.display(env.symbol_pool()),
+                        module_name.display_full(env)
+                    ),
+                );
+                return None;
+            },
+        };
+
+        match named_constant.get_value() {
+            Value::ByteArray(bytes) => match String::from_utf8(bytes.clone()) {
+                Ok(network) => Some(network),
+                Err(_) => {
+                    env.error(
+                        &vloc,
+                        "Unsupported attribute value: constant must be valid UTF-8",
+                    );
+                    None
+                },
+            },
+            _ => {
+                env.error(
+                    &vloc,
+                    "Unsupported attribute value: constant must be a byte array",
+                );
+                None
             },
         }
     }

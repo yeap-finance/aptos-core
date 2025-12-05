@@ -388,6 +388,7 @@ dependencies = [
  "move-table-extension",
  "move-unit-test",
  "move-vm-runtime",
+ "move-vm-test-utils",
  "move-vm-types",
  "open",
  "pathsearch",
